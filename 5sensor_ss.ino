@@ -3,23 +3,25 @@
 #include <UniversalTelegramBot.h>
 
 // **WiFi Credentials**
-const char* ssid = "Mam_2.4G";
-const char* password = "0816193125";
+const char* ssid = "Owxn";
+const char* password = "Owxn2409";
 
+// **Telegram Bot Token และ Chat IDs**
 // **Telegram Bot Token และ Chat IDs**
 const char* botTokens[] = {
   "7702438986:AAEeokB03nKz0Y9s7Vs4VWi-U7pzHHVO8v8", // Bot 1
   "7713083064:AAFNzaIMmlDjwM6nyl6z1eAwkKHY1Zcnu9Q", // Bot 2
-  "Token bot"          // Bot 3 (เพิ่ม Bot ใหม่)
-  "Token bot"          // Bot 4
-  "Token bot"          // Bot 5
+  "7769855925:AAHfp3zeUnZYAQP43boaW6ujXRGKt529oyw", // Bot 3
+  "Token bot",                                     // Bot 4
+  "Token bot"                                      // Bot 5
 };
-const int numBots = sizeof(botTokens) / sizeof(botTokens[0]); // จำนวน Bot
+
+const int numBots = sizeof(botTokens) / sizeof(botTokens[0]); // นิยามที่นี่แค่ครั้งเดียว
 
 // **Chat IDs ของแต่ละ Bot**
 const char* chatIdsBot1[] = {"6928484464"}; // Chat ID ของ Bot 1
 const char* chatIdsBot2[] = {"6928484464"}; // Chat ID ของ Bot 2
-const char* chatIdsBot3[] = {"Chat id"}; // Chat ID ของ Bot 3
+const char* chatIdsBot3[] = {"8020160552"}; // Chat ID ของ Bot 3
 const char* chatIdsBot4[] = {"Chat id"}; // Chat ID ของ Bot 4
 const char* chatIdsBot5[] = {"Chai id"}; // Chat ID ของ Bot 5
 const char** chatIds[] = {chatIdsBot1, chatIdsBot2, chatIdsBot3, chatIdsBot4, chatIdsBot5};
@@ -33,8 +35,7 @@ const int chatCounts[] = {
 
 // **สร้าง Client สำหรับ WiFi และ Telegram Bot**
 WiFiClientSecure client;
-UniversalTelegramBot* bots[numBots];
-const int numBots = sizeof(botTokens) / sizeof(botTokens[0]);
+UniversalTelegramBot* bots[numBots]; // ใช้ตัวแปร numBots ที่นิยามไว้แล้ว
 
 // **พินสำหรับเซ็นเซอร์**
 const int sensorPin1 = D1; // IR Sensor 1 (Digital Pin)
@@ -100,7 +101,7 @@ void checkWiFiConnection() {
 void checkDrawerSensor(int sensorPin, bool &drawerOccupied, const String &drawerName) {
   int sensorValue = digitalRead(sensorPin);
   if ((sensorValue == LOW) && !drawerOccupied) { // LOW หมายถึงตรวจจับเอกสาร
-    sendNotificationToAll("เอกสารถูกวางใน " + drawerName + " แล้ว!");
+    sendNotificationToAll("เอกสารถูกวางในลิ้นชักแล้ว!");
     drawerOccupied = true; // อัปเดตสถานะเซ็นเซอร์
   } else if ((sensorValue == HIGH) && drawerOccupied) { // HIGH หมายถึงไม่มีเอกสาร
     Serial.println(drawerName + " is empty.");
@@ -121,4 +122,3 @@ void loop() {
 
   delay(100); // ลดความถี่ในการอ่านค่า
 }
-
