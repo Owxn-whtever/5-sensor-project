@@ -112,37 +112,53 @@ void sendNotification(int drawer, String direction, int count) {
 
 // ✅ ฟังก์ชัน Loop
 void loop() {
-    for (int i = 0; i < numDrawers; i++) { // วนลูปสำหรับแต่ละชั้น
-        bool currentState1 = digitalRead(irPins[i][0]); // อ่านสถานะปัจจุบันของ IR Sensor 1
-        bool currentState2 = digitalRead(irPins[i][1]); // อ่านสถานะปัจจุบันของ IR Sensor 2
+    for (int i = 0; i < numDrawers; i++) {
+        bool currentState1 = digitalRead(irPins[i][0]);
+        bool currentState2 = digitalRead(irPins[i][1]);
 
-        unsigned long currentTime = millis(); // เวลาปัจจุบัน
+        unsigned long currentTime = millis();
+
+        Serial.print("Drawer ");
+        Serial.print(i + 1);
+        Serial.print(": IR1=");
+        Serial.print(currentState1);
+        Serial.print(", IR2=");
+        Serial.print(currentState2);
+        Serial.print(", Prev1=");
+        Serial.print(previousState[i][0]);
+        Serial.print(", Prev2=");
+        Serial.print(previousState[i][1]);
+        Serial.print(", Count=");
+        Serial.println(documentCount[i]);
 
         // ✅ ตรวจจับเอกสาร "เข้า" (IR1 -> IR2)
         if (previousState[i][0] == LOW && currentState1 == HIGH && 
-            previousState[i][1] == HIGH && currentState2 == LOW) { // ตรวจจับการเปลี่ยนแปลงสถานะ
-            if (currentTime - lastTriggerTime[i] > debounceTime) { // ตรวจสอบเวลาหน่วง
-                documentCount[i]++;  // เพิ่มจำนวนเอกสาร
-                sendNotification(i, "เข้า", documentCount[i]); // ส่งการแจ้งเตือน
-                lastTriggerTime[i] = currentTime; // อัพเดทเวลาตรวจจับล่าสุด
+            previousState[i][1] == HIGH && currentState2 == LOW) {
+            if (currentTime - lastTriggerTime[i] > debounceTime) {
+                documentCount[i]++;  // เพิ่มจำนวนเอกสารเข้า
+                sendNotification(i, "เข้า", documentCount[i]);
+                lastTriggerTime[i] = currentTime;
             }
         }
 
         // ✅ ตรวจจับเอกสาร "ออก" (IR2 -> IR1)
         if (previousState[i][1] == LOW && currentState2 == HIGH && 
-            previousState[i][0] == HIGH && currentState1 == LOW) { // ตรวจจับการเปลี่ยนแปลงสถานะ
-            if (currentTime - lastTriggerTime[i] > debounceTime) { // ตรวจสอบเวลาหน่วง
+            previousState[i][0] == HIGH && currentState1 == LOW) {
+            if (currentTime - lastTriggerTime[i] > debounceTime) {
                 if (documentCount[i] > 0) { 
-                    documentCount[i]--;  // ลดจำนวนเอกสาร
+                    documentCount[i]--;  // ลดจำนวนเอกสารที่ออก
                 }
-                sendNotification(i, "ออก", documentCount[i]); // ส่งการแจ้งเตือน
-                lastTriggerTime[i] = currentTime; // อัพเดทเวลาตรวจจับล่าสุด
+                sendNotification(i, "ออก", documentCount[i]);
+                lastTriggerTime[i] = currentTime;
             }
         }
 
-        previousState[i][0] = currentState1; // อัพเดทสถานะก่อนหน้า
-        previousState[i][1] = currentState2; // อัพเดทสถานะก่อนหน้า
+        // ✅ ปรับปรุง Logic การตรวจจับ
+        if (currentState1 != previousState[i][0] || currentState2 != previousState[i][1]) {
+            previousState[i][0] = currentState1;
+            previousState[i][1] = currentState2;
+        }
     }
 
-    delay(100); // หน่วงเวลาเล็กน้อย
+    delay(100);
 }
