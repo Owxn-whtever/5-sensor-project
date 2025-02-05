@@ -1,147 +1,148 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
+#include <SPI.h>
 
-// **WiFi Credentials**
-const char* ssid = "Owxn"; // SSID ของ Wi-Fi
-const char* password = "Owxn2409"; // รหัสผ่านของ Wi-Fi
+// ✅ ข้อมูล WiFi
+const char* ssid = "Owxn";            // ชื่อเครือข่าย WiFi
+const char* password = "Owxn2409";    // รหัสผ่าน WiFi
 
-// **Telegram Bot Token และ Chat IDs**
+// ✅ โทเค็นของ Telegram Bot (1 บอทต่อ 1 ชั้น)
 const char* botTokens[] = {
-  "7702438986:AAEeokB03nKz0Y9s7Vs4VWi-U7pzHHVO8v8", // Bot 1
-  "7713083064:AAFNzaIMmlDjwM6nyl6z1eAwkKHY1Zcnu9Q", // Bot 2
-  "7731694722:AAGIyRqH4XgT-Bh48aQWDWks0IN9x7mzveo", // Bot 3
-  "Token bot",                                     // Bot 4
-  "Token bot"                                      // Bot 5
-};
-const int numBots = sizeof(botTokens) / sizeof(botTokens[0]);
-
-// **Chat IDs**
-const char* chatIdsBot1[] = {"-4767274518"};
-const char* chatIdsBot2[] = {"-4734652541"};
-const char* chatIdsBot3[] = {"-4637803081"};
-const char* chatIdsBot4[] = {""};
-const char* chatIdsBot5[] = {"Chai id"};
-const char** chatIds[] = {chatIdsBot1, chatIdsBot2, chatIdsBot3, chatIdsBot4, chatIdsBot5};
-const int chatCounts[] = {
-  sizeof(chatIdsBot1) / sizeof(chatIdsBot1[0]),
-  sizeof(chatIdsBot2) / sizeof(chatIdsBot2[0]),
-  sizeof(chatIdsBot3) / sizeof(chatIdsBot3[0]),
-  sizeof(chatIdsBot4) / sizeof(chatIdsBot4[0]),
-  sizeof(chatIdsBot5) / sizeof(chatIdsBot5[0])
+  "7713083064:AAFNzaIMmlDjwM6nyl6z1eAwkKHY1Zcnu9Q", // Bot ชั้น 1
+  "7702438986:AAEeokB03nKz0Y9s7Vs4VWi-U7pzHHVO8v8", // Bot ชั้น 2
+  "8175471471:AAG3IpS62xQb_2pR-ZwfZnH_aVMy5ekjukw", // Bot ชั้น 3
+  "", // Bot ชั้น 4 (ยังไม่มี)
+  ""  // Bot ชั้น 5 (ยังไม่มี)
 };
 
-// **WiFi & Telegram Bot Initialization**
-WiFiClientSecure client; // ใช้สำหรับเชื่อมต่อ HTTPS
-UniversalTelegramBot* bots[numBots]; // อาร์เรย์เก็บบอท
+// ✅ Chat ID ของแต่ละบอท (1 ชั้นต่อ 1 บอท)
+const char* chatIds[] = {
+  "-4734652541",  // Chat ID ชั้น 1
+  "-4767274518",  // Chat ID ชั้น 2
+  "6928484464",   // Chat ID ชั้น 3
+  "",             // Chat ID ชั้น 4 (ยังไม่มี)
+  ""              // Chat ID ชั้น 5 (ยังไม่มี)
+};
 
-// **Sensor Pins**
-const int sensorPins[] = {D1, D2, D3, D4, D5}; // พินของเซ็นเซอร์
+// ✅ จำนวนชั้นที่ใช้งาน
+const int numDrawers = sizeof(botTokens) / sizeof(botTokens[0]);
 
-// **Drawer States**
-bool drawerOccupied[5] = {false}; // สถานะลิ้นชัก (ว่างหรือเต็ม)
-unsigned long lastDetectTime[5] = {0}; // เวลาของการตรวจจับเอกสารล่าสุด
-int stackedDocuments[5] = {0}; // จำนวนเอกสารที่ถูกซ้อนในลิ้นชัก
+// ✅ กำหนด GPIO สำหรับ IR Sensors (1 คู่ต่อ 1 ชั้น)
+const int irPins[][2] = {
+    {D0, D1},  // ชั้น 1
+    {D2, D3},  // ชั้น 2
+    {D4, D5},  // ชั้น 3
+    {D6, D7},  // ชั้น 4
+    {D8, D9}   // ชั้น 5 (แก้ RX/TX เป็นขาอื่น)
+};
 
-// **Sensor State Variables**
-int previousSensorValue[5] = {HIGH, HIGH, HIGH, HIGH, HIGH}; // เก็บค่าผลการตรวจจับก่อนหน้านี้ของเซ็นเซอร์
-unsigned long stateChangeTime[5] = {0}; // เวลาที่เซ็นเซอร์เปลี่ยนสถานะ
-const unsigned long initialDelay = 5000; // หน่วงเวลาการตรวจจับเริ่มต้น (5 วินาที)
+// ✅ ตัวแปรสถานะของ IR Sensors
+bool previousState[numDrawers][2]; // สถานะก่อนหน้าของ IR Sensors
+unsigned long lastTriggerTime[numDrawers]; // เวลาที่ตรวจจับล่าสุด
+const unsigned long debounceTime = 3000; // ระยะเวลาหน่วงป้องกันการตรวจจับซ้ำ (3 วินาที)
 
-bool wifiConnected = false; // สถานะการเชื่อมต่อ Wi-Fi
+// ✅ WiFiClientSecure และ UniversalTelegramBot
+WiFiClientSecure client;
+UniversalTelegramBot* bots[numDrawers]; // Array ของบอท Telegram (1 บอทต่อ 1 ชั้น)
 
+// ✅ ฟังก์ชัน Setup
 void setup() {
-  Serial.begin(115200); // เริ่มต้น Serial Monitor
-  // ตั้งค่าพินของเซ็นเซอร์
-  for (int i = 0; i < 5; i++) {
-    pinMode(sensorPins[i], INPUT); // เซ็นเซอร์เป็น Input
-  }
+    Serial.begin(115200); // เริ่ม Serial Communication
+    SPI.begin(); // เริ่ม SPI Communication
 
-  // เชื่อมต่อ Wi-Fi
-  Serial.print("Connecting to WiFi");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-  wifiConnected = true; // อัปเดตสถานะ Wi-Fi
-  client.setInsecure(); // ปิดการตรวจสอบใบรับรอง SSL/TLS
-
-  // สร้าง Telegram Bots
-  for (int i = 0; i < numBots; i++) {
-    bots[i] = new UniversalTelegramBot(botTokens[i], client);
-  }
-
-  // แจ้งเตือนเมื่อเชื่อมต่อ Wi-Fi
-  sendNotificationToAll("อุปกรณ์เชื่อมต่อ Wi-Fi เรียบร้อยแล้ว!");
-}
-
-// ฟังก์ชันส่งข้อความไปยังทุกบอท
-void sendNotificationToAll(const String& message) {
-  for (int botIndex = 0; botIndex < numBots; botIndex++) {
-    for (int chatIndex = 0; chatIndex < chatCounts[botIndex]; chatIndex++) {
-      bots[botIndex]->sendMessage(chatIds[botIndex][chatIndex], message, "Markdown");
-      Serial.println("Notification sent to Bot " + String(botIndex + 1));
+    Serial.print(" กำลังเชื่อมต่อ WiFi");
+    WiFi.begin(ssid, password); // เชื่อมต่อ WiFi
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
     }
-  }
-}
+    Serial.println("\n✅ เชื่อมต่อ WiFi สำเร็จ!");
+    Serial.print(" IP Address: ");
+    Serial.println(WiFi.localIP());
 
-// ฟังก์ชันส่งข้อความไปยังบอทที่ระบุ
-void sendNotificationToSpecificBot(int botIndex, const String& message) {
-  for (int chatIndex = 0; chatIndex < chatCounts[botIndex]; chatIndex++) {
-    bots[botIndex]->sendMessage(chatIds[botIndex][chatIndex], message, "Markdown");
-    Serial.println("Notification sent to Bot " + String(botIndex + 1));
-  }
-}
+    // ⚡ ปิดการตรวจสอบ SSL (สำหรับ Telegram Bot)
+    client.setInsecure();
 
-// ฟังก์ชันตรวจสอบสถานะเซ็นเซอร์และตรวจจับการเปลี่ยนแปลง
-void checkDrawerSensorWithVerification(int sensorIndex, int botIndex) {
-  unsigned long currentMillis = millis(); // เวลาปัจจุบัน
-  int sensorValue = digitalRead(sensorPins[sensorIndex]); // อ่านค่าจากเซ็นเซอร์
-
-  // ตรวจสอบการเปลี่ยนแปลงสถานะของเซ็นเซอร์
-  if (sensorValue != previousSensorValue[sensorIndex]) {
-    stateChangeTime[sensorIndex] = currentMillis; // บันทึกเวลาที่สถานะเซ็นเซอร์เปลี่ยน
-    previousSensorValue[sensorIndex] = sensorValue; // อัปเดตค่าผลการตรวจจับ
-  }
-
-  // ถ้าพบเอกสารใหม่ (ค่าของเซ็นเซอร์เป็น LOW)
-  if (sensorValue == LOW) {
-    if (!drawerOccupied[sensorIndex] || (currentMillis - stateChangeTime[sensorIndex] >= 500)) {
-      // ส่งการแจ้งเตือนเมื่อมีเอกสารเข้า
-      sendNotificationToSpecificBot(botIndex, "มีเอกสารเข้าในลิ้นชักที่ " + String(sensorIndex + 1) + 
-                                      " (" + String(stackedDocuments[sensorIndex] + 1) + " ซ้อน)");
-      drawerOccupied[sensorIndex] = true; // อัปเดตสถานะลิ้นชัก
-      lastDetectTime[sensorIndex] = currentMillis; // บันทึกเวลาการตรวจจับล่าสุด
-      stackedDocuments[sensorIndex]++; // เพิ่มจำนวนเอกสารในลิ้นชัก
+    // ⚡ ตั้งค่า IR Sensors
+    for (int i = 0; i < numDrawers; i++) {
+        pinMode(irPins[i][0], INPUT); // กำหนดขา IR Sensor เป็น input
+        pinMode(irPins[i][1], INPUT); // กำหนดขา IR Sensor เป็น input
+        previousState[i][0] = digitalRead(irPins[i][0]); // อ่านสถานะเริ่มต้นของ IR Sensor
+        previousState[i][1] = digitalRead(irPins[i][1]); // อ่านสถานะเริ่มต้นของ IR Sensor
+        lastTriggerTime[i] = 0; // กำหนดเวลาตรวจจับล่าสุดเป็น 0
     }
-  } else { // ถ้าไม่มีเอกสาร (ค่าของเซ็นเซอร์เป็น HIGH)
-    unsigned long dynamicDelay = initialDelay + (stackedDocuments[sensorIndex] * 500); // คำนวณเวลาหน่วงตามจำนวนเอกสาร
-    if (drawerOccupied[sensorIndex] && (currentMillis - lastDetectTime[sensorIndex] >= dynamicDelay)) {
-      // ส่งการแจ้งเตือนเมื่อลิ้นชักว่าง
-      sendNotificationToSpecificBot(botIndex, "ลิ้นชักที่ " + String(sensorIndex + 1) + " ว่างแล้ว!");
-      drawerOccupied[sensorIndex] = false; // อัปเดตสถานะลิ้นชัก
-      lastDetectTime[sensorIndex] = currentMillis; // บันทึกเวลาการตรวจจับล่าสุด
-      stackedDocuments[sensorIndex] = 0; // รีเซ็ตจำนวนเอกสาร
+
+    // ✅ สร้างบอท Telegram แต่ละตัว (1 ชั้นต่อ 1 บอท)
+    for (int i = 0; i < numDrawers; i++) {
+        if (strlen(botTokens[i]) > 0) { // ตรวจสอบว่ามีโทเคนสำหรับชั้นนี้หรือไม่
+            bots[i] = new UniversalTelegramBot(botTokens[i], client); // สร้างบอท
+        } else {
+            bots[i] = nullptr;  // ถ้าไม่มีโทเคน ให้กำหนดเป็น nullptr
+        }
     }
-  }
 }
 
+// ✅ ตัวแปรเก็บจำนวนเอกสารในลิ้นชักแต่ละชั้น
+int documentCount[numDrawers] = {0}; 
+
+// ✅ ฟังก์ชันส่งการแจ้งเตือนไปยัง Telegram Bot
+void sendNotification(int drawer, String direction, int count) {
+    if (WiFi.status() != WL_CONNECTED) { // ตรวจสอบการเชื่อมต่อ WiFi
+        Serial.println("❌ WiFi ไม่เชื่อมต่อ");
+        return;
+    }
+
+    if (bots[drawer] == nullptr || strlen(chatIds[drawer]) == 0) { // ตรวจสอบว่ามีบอทและ Chat ID หรือไม่
+        Serial.println("⚠️ ไม่มีบอทสำหรับชั้นนี้ หรือไม่มี Chat ID");
+        return;
+    }
+
+    String message = " เอกสาร" + direction + "ที่ลิ้นชัก " + String(drawer + 1) + 
+                     "\n จำนวนเอกสารปัจจุบัน: " + String(count); // สร้างข้อความแจ้งเตือน
+    Serial.println(" " + message); // แสดงข้อความใน Serial Monitor
+
+    bool sent = bots[drawer]->sendMessage(chatIds[drawer], message, "Markdown"); // ส่งข้อความ
+    if (sent) {
+        Serial.println("✅ ส่งข้อความสำเร็จไปยัง Bot ชั้น " + String(drawer + 1));
+    } else {
+        Serial.println("❌ ส่งข้อความล้มเหลวที่ Bot ชั้น " + String(drawer + 1));
+    }
+}
+
+// ✅ ฟังก์ชัน Loop
 void loop() {
-  // ตรวจสอบสถานะการเชื่อมต่อ Wi-Fi
-  if (WiFi.status() != WL_CONNECTED && wifiConnected) {
-    wifiConnected = false;
-    sendNotificationToAll("การเชื่อมต่อ Wi-Fi หลุด! โปรดตรวจสอบเครือข่าย.");
-  } else if (WiFi.status() == WL_CONNECTED && !wifiConnected) {
-    wifiConnected = true;
-    sendNotificationToAll("อุปกรณ์เชื่อมต่อ Wi-Fi ได้อีกครั้ง!");
-  }
+    for (int i = 0; i < numDrawers; i++) { // วนลูปสำหรับแต่ละชั้น
+        bool currentState1 = digitalRead(irPins[i][0]); // อ่านสถานะปัจจุบันของ IR Sensor 1
+        bool currentState2 = digitalRead(irPins[i][1]); // อ่านสถานะปัจจุบันของ IR Sensor 2
 
-  // ตรวจสอบสถานะเซ็นเซอร์แต่ละตัว
-  for (int i = 0; i < 5; i++) {
-    checkDrawerSensorWithVerification(i, i); // ตรวจสอบแต่ละเซ็นเซอร์
-  }
+        unsigned long currentTime = millis(); // เวลาปัจจุบัน
 
-  delay(100); // หน่วงเวลาเพื่อลดความถี่ในการตรวจจับ
+        // ✅ ตรวจจับเอกสาร "เข้า" (IR1 -> IR2)
+        if (previousState[i][0] == LOW && currentState1 == HIGH && 
+            previousState[i][1] == HIGH && currentState2 == LOW) { // ตรวจจับการเปลี่ยนแปลงสถานะ
+            if (currentTime - lastTriggerTime[i] > debounceTime) { // ตรวจสอบเวลาหน่วง
+                documentCount[i]++;  // เพิ่มจำนวนเอกสาร
+                sendNotification(i, "เข้า", documentCount[i]); // ส่งการแจ้งเตือน
+                lastTriggerTime[i] = currentTime; // อัพเดทเวลาตรวจจับล่าสุด
+            }
+        }
+
+        // ✅ ตรวจจับเอกสาร "ออก" (IR2 -> IR1)
+        if (previousState[i][1] == LOW && currentState2 == HIGH && 
+            previousState[i][0] == HIGH && currentState1 == LOW) { // ตรวจจับการเปลี่ยนแปลงสถานะ
+            if (currentTime - lastTriggerTime[i] > debounceTime) { // ตรวจสอบเวลาหน่วง
+                if (documentCount[i] > 0) { 
+                    documentCount[i]--;  // ลดจำนวนเอกสาร
+                }
+                sendNotification(i, "ออก", documentCount[i]); // ส่งการแจ้งเตือน
+                lastTriggerTime[i] = currentTime; // อัพเดทเวลาตรวจจับล่าสุด
+            }
+        }
+
+        previousState[i][0] = currentState1; // อัพเดทสถานะก่อนหน้า
+        previousState[i][1] = currentState2; // อัพเดทสถานะก่อนหน้า
+    }
+
+    delay(100); // หน่วงเวลาเล็กน้อย
 }
