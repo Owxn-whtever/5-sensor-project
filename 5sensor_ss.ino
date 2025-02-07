@@ -131,7 +131,7 @@ void loop() {
         if (previousState[i][1] == LOW && currentState2 == HIGH && 
             previousState[i][0] == HIGH && currentState1 == LOW) {
             if (currentTime - lastTriggerTime[i] > debounceTime) {
-                sendNotification(i, "ออก");
+                sendNotification(i, "Your Document out");
                 lastTriggerTime[i] = currentTime;
             }
         }
